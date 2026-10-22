@@ -17,7 +17,7 @@ if [[ "${EUID}" -ne 0 ]]; then
   exit 1
 fi
 
-install -d -m 0700 -o root -g root "${SECRETS_DIR}"
+install -d -m 0755 -o root -g root "${SECRETS_DIR}"
 
 generate_secret() {
   local name="$1"

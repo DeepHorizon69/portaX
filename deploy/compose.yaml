@@ -64,12 +64,7 @@ services:
     image: caddy:2.9.1-alpine
     container_name: portax-caddy
     restart: unless-stopped
-    user: "65532:65532"
     read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
     mem_limit: 128m
     cpus: 0.50
     pids_limit: 100
