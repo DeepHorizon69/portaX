@@ -8,15 +8,17 @@
 FROM golang:1.24-alpine AS builder
 
 WORKDIR /src
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata git
+
+RUN mkdir -p /out
 
 COPY go.mod ./
 COPY . .
 
-RUN go mod tidy && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test ./... -v && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/portal ./cmd/portal && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/prober ./cmd/prober
+RUN go mod tidy
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test ./... -v
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/portal ./cmd/portal
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/prober ./cmd/prober
 
 # ------------------------------------------------------------------------------
 # Target 1: portal (Go SSR BFF)
