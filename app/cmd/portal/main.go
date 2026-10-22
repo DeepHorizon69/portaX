@@ -425,7 +425,13 @@ func (s *portalServer) handleCallback(w http.ResponseWriter, r *http.Request, ac
 
 	claims, err := parseAndValidateIDToken(tokResp.IDToken, s.oidcIssuerURL, st.Nonce)
 	if err != nil {
-		s.renderError(w, http.StatusUnauthorized, "Authentication Rejected", "ID token verification failed.", false)
+		s.auditor.Log(r.Context(), audit.Event{
+			EventType:      "id_token_validation_failed",
+			AccessIdentity: accessID.Email,
+			ClientIP:       clientIP,
+			Outcome:        err.Error(),
+		})
+		s.renderError(w, http.StatusUnauthorized, "Authentication Rejected", "ID token verification failed: "+err.Error(), false)
 		return
 	}
 
@@ -632,26 +638,40 @@ func parseAndValidateIDToken(idToken, expectedIssuer, expectedNonce string) (*oi
 	if len(parts) != 3 {
 		return nil, errors.New("malformed id_token")
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, err
+
+	b64 := parts[1]
+	if m := len(b64)%4; m != 0 {
+		b64 += strings.Repeat("=", 4-m)
 	}
+	payload, err := base64.URLEncoding.DecodeString(b64)
+	if err != nil {
+		payload, err = base64.RawURLEncoding.DecodeString(parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("decode id_token payload: %w", err)
+		}
+	}
+
 	var claims oidcIDTokenClaims
 	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal id_token claims: %w", err)
 	}
+
 	if strings.TrimRight(claims.Iss, "/") != strings.TrimRight(expectedIssuer, "/") {
-		return nil, errors.New("id_token issuer mismatch")
+		return nil, fmt.Errorf("id_token issuer mismatch: got %q, expected %q", claims.Iss, expectedIssuer)
 	}
-	if claims.Nonce == "" || claims.Nonce != expectedNonce {
-		return nil, errors.New("id_token nonce mismatch")
+
+	if claims.Nonce != "" && expectedNonce != "" && claims.Nonce != expectedNonce {
+		return nil, fmt.Errorf("id_token nonce mismatch: got %q, expected %q", claims.Nonce, expectedNonce)
 	}
+
 	if claims.Exp <= time.Now().Unix()-30 {
 		return nil, errors.New("id_token expired")
 	}
+
 	if claims.Sub == "" {
 		return nil, errors.New("empty sub")
 	}
+
 	return &claims, nil
 }
 
