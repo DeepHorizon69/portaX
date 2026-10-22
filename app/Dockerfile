@@ -8,6 +8,7 @@
 FROM golang:1.24-alpine AS builder
 
 WORKDIR /src
+ENV GOTOOLCHAIN=auto
 RUN apk add --no-cache ca-certificates tzdata git
 
 RUN mkdir -p /out
