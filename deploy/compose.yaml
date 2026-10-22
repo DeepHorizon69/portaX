@@ -139,6 +139,7 @@ services:
       ALLOWED_LAUNCH_HOST_SUFFIXES: ${ALLOWED_LAUNCH_HOST_SUFFIXES:-alsa.web.id,ts.net}
       OPS_STATUS_FILE: /var/run/portax-ops/status.json
     volumes:
+      - ../app/web:/app/web:ro
       - ./prober/targets.yaml:/etc/portax/targets.yaml:ro
       - vol_ops_status:/var/run/portax-ops:ro
     secrets:
