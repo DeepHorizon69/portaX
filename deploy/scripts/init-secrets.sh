@@ -27,11 +27,12 @@ generate_secret() {
 
   if [[ -f "${path}" ]]; then
     echo "[SKIP] ${path} already exists (preserving existing secret)"
+    chmod 0444 "${path}"
   else
     openssl rand -hex "${bytes}" | tr -d '\n' > "${path}"
     chown "${owner_uid}:0" "${path}"
-    chmod 0400 "${path}"
-    echo "[OK]   Generated ${path} (mode 0400, uid ${owner_uid})"
+    chmod 0444 "${path}"
+    echo "[OK]   Generated ${path} (mode 0444, uid ${owner_uid})"
   fi
 }
 
