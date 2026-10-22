@@ -171,15 +171,11 @@ http://:8081 {
 }
 
 # ==============================================================================
-# LISTENER 3: Tailscale-Only Authentik Admin UI (bound to 127.0.0.1:9443)
+# LISTENER 3: Admin UI (bound to 9443)
 # ==============================================================================
 http://:9443 {
-	import security_headers
-
 	reverse_proxy 172.30.2.3:9000 {
 		header_up Host {host}
-		header_up X-Forwarded-Proto "https"
-		header_up -X-Forwarded-For
-		header_up -X-Real-IP
+		header_up X-Forwarded-Proto {scheme}
 	}
 }
