@@ -24,7 +24,7 @@
 	 persist_config off
 
 	servers :8080 {
-		trusted_proxies static 172.30.0.2/32
+		trusted_proxies static 172.30.0.0/29
 		client_ip_headers Cf-Connecting-Ip
 		max_header_size 16KB
 		timeouts {

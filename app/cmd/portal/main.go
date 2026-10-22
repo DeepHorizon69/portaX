@@ -165,6 +165,17 @@ func main() {
 	}
 
 	go func() {
+		preloadCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.accessVerifier.RefreshKeys(preloadCtx); err != nil {
+			auditor.Log(context.Background(), audit.Event{
+				EventType: "cf_certs_preload_warning",
+				Outcome:   err.Error(),
+			})
+		}
+	}()
+
+	go func() {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

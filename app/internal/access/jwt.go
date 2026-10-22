@@ -92,6 +92,11 @@ func NewVerifier(teamDomain, audTag string, client *http.Client) *Verifier {
 	}
 }
 
+// RefreshKeys pre-fetches or refreshes Cloudflare Access public keys into the cache.
+func (v *Verifier) RefreshKeys(ctx context.Context) error {
+	return v.refreshKeys(ctx)
+}
+
 // SetStaticKey registers a public key directly (used in deterministic unit tests).
 func (v *Verifier) SetStaticKey(kid string, pub *rsa.PublicKey) {
 	v.mu.Lock()
