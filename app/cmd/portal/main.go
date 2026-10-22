@@ -361,7 +361,7 @@ func (s *portalServer) handleCallback(w http.ResponseWriter, r *http.Request, ac
 	clientIP := strings.TrimSpace(r.Header.Get("X-Real-IP"))
 	preCookie, err := r.Cookie(auth.PreAuthCookieName)
 	if err != nil || preCookie.Value == "" {
-		s.renderError(w, http.StatusBadRequest, "Authentication Error", "Missing pre-authentication state cookie.", false)
+		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
 	}
 	// Always clear pre-auth cookie immediately (one-time use / Session Rotation)
@@ -369,12 +369,18 @@ func (s *portalServer) handleCallback(w http.ResponseWriter, r *http.Request, ac
 
 	st, err := s.oidcSealer.OpenState(preCookie.Value, time.Now().UTC())
 	if err != nil || st.AccessSub != accessID.Sub {
-		s.renderError(w, http.StatusBadRequest, "Authentication Error", "Invalid or expired OIDC state.", false)
+		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
 	}
 
 	if r.URL.Query().Get("state") != st.State {
-		s.renderError(w, http.StatusBadRequest, "Authentication Error", "OIDC state mismatch.", false)
+		s.auditor.Log(r.Context(), audit.Event{
+			EventType:      "oidc_state_mismatch",
+			AccessIdentity: accessID.Email,
+			ClientIP:       clientIP,
+			Outcome:        fmt.Sprintf("query=%q, cookie=%q", r.URL.Query().Get("state"), st.State),
+		})
+		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
 	}
 	code := r.URL.Query().Get("code")
