@@ -68,6 +68,9 @@ services:
     mem_limit: 128m
     cpus: 0.50
     pids_limit: 100
+    ports:
+      - "192.168.1.77:9443:9443/tcp"
+      - "100.89.228.107:9443:9443/tcp"
     environment:
       PORTAL_DOMAIN: ${PORTAL_DOMAIN:-panel.alsa.web.id}
       AUTH_DOMAIN: ${AUTH_DOMAIN:-auth.alsa.web.id}
