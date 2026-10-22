@@ -76,6 +76,9 @@ type Verifier struct {
 
 func NewVerifier(teamDomain, audTag string, client *http.Client) *Verifier {
 	cleanDomain := strings.TrimRight(strings.TrimSpace(teamDomain), "/")
+	if cleanDomain != "" && !strings.HasPrefix(cleanDomain, "http://") && !strings.HasPrefix(cleanDomain, "https://") {
+		cleanDomain = "https://" + cleanDomain
+	}
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
