@@ -128,6 +128,18 @@ http://{$AUTH_DOMAIN:auth.alsa.web.id}:8080 {
 		redir https://{$PORTAL_DOMAIN:panel.alsa.web.id}/auth/login 302
 	}
 
+	handle /logout-sso {
+		header +Set-Cookie "authentik_session=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax"
+		header +Set-Cookie "authentik_csrf=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; SameSite=Lax"
+		redir https://{$PORTAL_DOMAIN:panel.alsa.web.id}/auth/login 302
+	}
+
+	handle /logout-all {
+		header +Set-Cookie "authentik_session=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax"
+		header +Set-Cookie "authentik_csrf=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; SameSite=Lax"
+		redir https://{$PORTAL_DOMAIN:panel.alsa.web.id}/cdn-cgi/access/logout 302
+	}
+
 	handle @allowed_public_auth {
 		reverse_proxy 172.30.2.3:9000 {
 			header_up Host {host}
