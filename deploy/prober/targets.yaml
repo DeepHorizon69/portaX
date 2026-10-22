@@ -62,3 +62,14 @@ targets:
       - "192.168.1.0/24"
       - "100.64.0.0/10"
     tls_verify: false
+
+  - id: openspeedtest-web
+    method: http_get
+    host: 192.168.1.77
+    port: 3000
+    path: /
+    expected_status: 200
+    allowed_cidrs:
+      - "192.168.1.0/24"
+      - "100.64.0.0/10"
+    tls_verify: false
