@@ -63,7 +63,7 @@
 		-X-Powered-By
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
-		Referrer-Policy "no-referrer"
+		Referrer-Policy "same-origin"
 		Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
 		Cross-Origin-Opener-Policy "same-origin"
 		Cross-Origin-Resource-Policy "same-origin"
@@ -78,7 +78,7 @@
 http://{$PORTAL_DOMAIN:panel.alsa.web.id}:8080 {
 	import security_headers
 	header {
-		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self' https://{$AUTH_DOMAIN:auth.alsa.web.id}; frame-ancestors 'none'; base-uri 'none'"
+		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self' https://{$AUTH_DOMAIN:auth.alsa.web.id}; frame-ancestors 'none'; base-uri 'none'"
 	}
 
 	request_body {
@@ -112,10 +112,20 @@ http://{$AUTH_DOMAIN:auth.alsa.web.id}:8080 {
 		path /if/flow/*
 		path /api/v3/flows/executor/*
 		path /api/v3/root/config/
+		path /api/v3/core/brands/current/
 		path /application/o/*
 		path /.well-known/openid-configuration
 		path /.well-known/webfinger
 		path /static/*
+	}
+
+	@post_logout_redirect {
+		path /
+		path /if/user*
+	}
+
+	handle @post_logout_redirect {
+		redir https://{$PORTAL_DOMAIN:panel.alsa.web.id}/auth/login 302
 	}
 
 	handle @allowed_public_auth {

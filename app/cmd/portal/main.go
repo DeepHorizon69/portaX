@@ -297,6 +297,10 @@ func (s *portalServer) withSecurity(level authz.AccessLevel, requireCSRF bool, n
 
 		// Enforce CSRF & Admin rate limits on state-changing requests (Acceptance #7 & #8)
 		if requireCSRF {
+			if r.URL.Path == "/auth/logout" && r.Method == http.MethodGet {
+				next(w, r, accessID, sess)
+				return
+			}
 			if r.Method != http.MethodPost {
 				s.renderError(w, http.StatusMethodNotAllowed, "Method Not Allowed", "POST required.", false)
 				return

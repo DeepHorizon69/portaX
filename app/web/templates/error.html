@@ -7,11 +7,13 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="card" style="max-width:480px; margin:4rem auto;">
+  <div class="card" style="max-width:520px; margin:4rem auto;">
     <div class="card-title">{{.Code}} — {{.Title}}</div>
     <div class="card-desc">{{.Message}}</div>
     {{if .ShowLogout}}
-      <div class="card-meta">
+      <div class="card-meta" style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:1rem;">
+        <a class="btn" href="https://auth.alsa.web.id/if/flow/default-invalidation-flow/">Switch Account (Sign Out of Authentik)</a>
+        <a class="btn" href="/auth/login">Sign In to Portal</a>
         <a class="btn" href="/cdn-cgi/access/logout">Cloudflare Access Logout</a>
       </div>
     {{end}}

@@ -68,14 +68,15 @@ func VerifyCSRF(r *http.Request, portalDomain, expectedCSRFToken string) bool {
 	}
 
 	if secFetch := r.Header.Get("Sec-Fetch-Site"); secFetch != "" {
-		if secFetch != "same-origin" && secFetch != "none" {
+		if secFetch != "same-origin" && secFetch != "same-site" && secFetch != "none" {
 			return false
 		}
 	}
 
-	if origin := r.Header.Get("Origin"); origin != "" {
-		expectedOrigin := "https://" + strings.ToLower(strings.TrimSpace(portalDomain))
-		if strings.ToLower(strings.TrimSpace(origin)) != expectedOrigin {
+	if origin := strings.ToLower(strings.TrimSpace(r.Header.Get("Origin"))); origin != "" && origin != "null" {
+		expectedHTTPS := "https://" + strings.ToLower(strings.TrimSpace(portalDomain))
+		expectedHTTP := "http://" + strings.ToLower(strings.TrimSpace(portalDomain))
+		if origin != expectedHTTPS && origin != expectedHTTP {
 			return false
 		}
 	}
