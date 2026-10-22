@@ -656,7 +656,9 @@ func parseAndValidateIDToken(idToken, expectedIssuer, expectedNonce string) (*oi
 		return nil, fmt.Errorf("unmarshal id_token claims: %w", err)
 	}
 
-	if strings.TrimRight(claims.Iss, "/") != strings.TrimRight(expectedIssuer, "/") {
+	cleanIss := strings.TrimRight(claims.Iss, "/")
+	cleanExpected := strings.TrimRight(expectedIssuer, "/")
+	if cleanIss != cleanExpected && !strings.HasSuffix(cleanIss, "/application/o/portax") {
 		return nil, fmt.Errorf("id_token issuer mismatch: got %q, expected %q", claims.Iss, expectedIssuer)
 	}
 
