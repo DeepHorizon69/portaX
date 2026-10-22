@@ -69,7 +69,7 @@ services:
     cpus: 0.50
     pids_limit: 100
     ports:
-      - "127.0.0.1:9443:9443"
+      - "9443:9443"
     environment:
       PORTAL_DOMAIN: ${PORTAL_DOMAIN:-panel.alsa.web.id}
       AUTH_DOMAIN: ${AUTH_DOMAIN:-auth.alsa.web.id}
