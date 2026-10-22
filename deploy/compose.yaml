@@ -114,6 +114,9 @@ services:
     mem_limit: 128m
     cpus: 0.50
     pids_limit: 100
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       LISTEN_ADDR: "0.0.0.0:8000"
       TRUSTED_PROXY_IP: "172.30.1.2"
