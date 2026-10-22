@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>portaX — Admin Console</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>portaX Administration</h1>
+      <span class="badge">Admin: {{.Username}}</span>
+    </div>
+    <div style="display:flex; gap:0.6rem;">
+      <a class="btn" href="/">Back to Dashboard</a>
+      <form method="POST" action="/auth/logout">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit">Sign Out</button>
+      </form>
+    </div>
+  </header>
+
+  <h2 style="font-size:1.05rem; margin-bottom:0.75rem;">Add / Update Catalog Service</h2>
+  <form class="admin-form" method="POST" action="/admin/catalog">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div>
+      <label>Service Slug ID</label>
+      <input type="text" name="id" required pattern="^[a-z0-9][a-z0-9-]{1,62}$" placeholder="pihole-dns">
+    </div>
+    <div>
+      <label>Display Name</label>
+      <input type="text" name="display_name" required maxlength="80" placeholder="Pi-hole DNS">
+    </div>
+    <div>
+      <label>Category</label>
+      <input type="text" name="category" required maxlength="40" placeholder="Networking">
+    </div>
+    <div>
+      <label>Bundled Icon</label>
+      <select name="icon_key">
+        <option value="shield">shield</option>
+        <option value="server">server</option>
+        <option value="database">database</option>
+        <option value="network">network</option>
+        <option value="cloud">cloud</option>
+        <option value="terminal">terminal</option>
+        <option value="lock">lock</option>
+        <option value="activity">activity</option>
+        <option value="globe">globe</option>
+        <option value="cpu">cpu</option>
+      </select>
+    </div>
+    <div>
+      <label>Launch URL (HTTPS allowlisted suffix only)</label>
+      <input type="url" name="launch_url" required placeholder="https://pihole.alsa.web.id/admin">
+    </div>
+    <div>
+      <label>Destination Access Control</label>
+      <select name="protection_mode">
+        <option value="cloudflare_access">cloudflare_access</option>
+        <option value="authentik_forward_auth">authentik_forward_auth</option>
+        <option value="tailscale_only">tailscale_only</option>
+      </select>
+    </div>
+    <div>
+      <label>Visibility</label>
+      <select name="visibility">
+        <option value="admin_only">Admin Only</option>
+        <option value="viewer_and_admin">Viewer &amp; Admin</option>
+      </select>
+    </div>
+    <div>
+      <label>Allowlisted Probe Target ID (from targets.yaml)</label>
+      <input type="text" name="probe_target_id" placeholder="pihole-dns-web">
+    </div>
+    <div style="grid-column: 1 / -1;">
+      <label>Description</label>
+      <input type="text" name="description" required maxlength="280" placeholder="Internal DNS sinkhole and DHCP server">
+    </div>
+    <div>
+      <button type="submit">Save Service</button>
+    </div>
+  </form>
+
+  <h2 style="font-size:1.05rem; margin-bottom:0.75rem;">Existing Services</h2>
+  <table style="margin-bottom:2rem;">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Launch URL</th>
+        <th>Roles</th>
+        <th>Probe Target</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Services}}
+      <tr>
+        <td>{{.ID}}</td>
+        <td>{{.DisplayName}}</td>
+        <td>{{.LaunchURL}}</td>
+        <td>{{range .AllowedRoles}}{{.}} {{end}}</td>
+        <td>{{.ProbeTargetID}}</td>
+        <td>
+          <form method="POST" action="/admin/catalog/delete">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  <h2 style="font-size:1.05rem; margin-bottom:0.75rem;">Recent Security Audit Events (Secrets Redacted)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>UTC Time</th>
+        <th>Event</th>
+        <th>Actor</th>
+        <th>Role</th>
+        <th>Access Perimeter</th>
+        <th>Client IP</th>
+        <th>Resource</th>
+        <th>Outcome</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .AuditEvents}}
+      <tr>
+        <td>{{.Timestamp.Format "2006-01-02 15:04:05"}}</td>
+        <td>{{.EventType}}</td>
+        <td>{{.ActorUsername}}</td>
+        <td>{{.ActorRole}}</td>
+        <td>{{.AccessIdentity}}</td>
+        <td>{{.ClientIP}}</td>
+        <td>{{.TargetResource}}</td>
+        <td>{{.Outcome}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</body>
+</html>

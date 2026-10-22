@@ -1,0 +1,31 @@
+# ==============================================================================
+# portaX Cloudflare Tunnel Ingress Configuration (Config-as-Code)
+# ==============================================================================
+# Credentials file is mounted read-only via Docker secret at:
+#   /etc/cloudflared/credentials.json
+# Replace <YOUR-TUNNEL-UUID> with your actual tunnel UUID during M7.
+# ==============================================================================
+tunnel: "<YOUR-TUNNEL-UUID>"
+credentials-file: /etc/cloudflared/credentials.json
+no-autoupdate: true
+protocol: quic
+
+ingress:
+  - hostname: panel.alsa.web.id
+    service: http://172.30.0.3:8080
+    originRequest:
+      connectTimeout: 5s
+      tlsTimeout: 5s
+      keepAliveTimeout: 30s
+      noHappyEyeballs: true
+
+  - hostname: auth.alsa.web.id
+    service: http://172.30.0.3:8080
+    originRequest:
+      connectTimeout: 5s
+      tlsTimeout: 5s
+      keepAliveTimeout: 30s
+      noHappyEyeballs: true
+
+  # Mandatory catch-all rule: reject all unmapped hostnames with 404
+  - service: http_status:404

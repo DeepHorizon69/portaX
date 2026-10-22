@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>portaX — {{.Code}} {{.Title}}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="card" style="max-width:480px; margin:4rem auto;">
+    <div class="card-title">{{.Code}} — {{.Title}}</div>
+    <div class="card-desc">{{.Message}}</div>
+    {{if .ShowLogout}}
+      <div class="card-meta">
+        <a class="btn" href="/cdn-cgi/access/logout">Cloudflare Access Logout</a>
+      </div>
+    {{end}}
+  </div>
+</body>
+</html>

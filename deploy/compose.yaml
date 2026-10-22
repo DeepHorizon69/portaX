@@ -1,0 +1,473 @@
+# ==============================================================================
+# portaX Hardened Docker Compose Stack (Architecture A: Single-Host Resilience)
+# ==============================================================================
+# Security properties enforced across this Compose file:
+# 1. Zero ports published to 0.0.0.0. Only 127.0.0.1:9443 is bound for Tailscale.
+# 2. Every container drops ALL Linux capabilities (cap_drop: [ALL]).
+# 3. Every container sets security_opt: [no-new-privileges:true].
+# 4. Read-only root filesystems with noexec,nosuid,nodev tmpfs mounts.
+# 5. Strictly segmented internal networks with static IP assignments.
+# 6. Zero Docker socket mounts (/var/run/docker.sock is prohibited).
+# 7. Pinned patched versions (>= PostgreSQL 17.11, >= Authentik 2025.12.4).
+# ==============================================================================
+
+name: portax
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Cloudflare Tunnel Connector (Outbound-only ingress)
+  # ----------------------------------------------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:2025.2.1
+    container_name: portax-cloudflared
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 100
+    command:
+      - tunnel
+      - --config
+      - /etc/cloudflared/config.yml
+      - --no-autoupdate
+      - run
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+    secrets:
+      - source: cloudflared_credentials
+        target: /etc/cloudflared/credentials.json
+        mode: 0400
+    networks:
+      net_edge:
+        ipv4_address: 172.30.0.2
+    depends_on:
+      caddy:
+        condition: service_healthy
+    logging: &default_logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ----------------------------------------------------------------------------
+  # 2. Caddy Internal Reverse Proxy (3 Isolated Trust-Boundary Listeners)
+  #    - :8080 (net_edge): Public ingress from cloudflared ONLY
+  #    - :8081 (net_portal): OIDC back-channel from portal -> authentik ONLY
+  #    - :9443 (127.0.0.1): Admin listener for Tailscale Serve ONLY
+  # ----------------------------------------------------------------------------
+  caddy:
+    image: caddy:2.9.1-alpine
+    container_name: portax-caddy
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: 0.50
+    pids_limit: 100
+    ports:
+      - "127.0.0.1:9443:9443"
+    environment:
+      PORTAL_DOMAIN: ${PORTAL_DOMAIN:-panel.alsa.web.id}
+      AUTH_DOMAIN: ${AUTH_DOMAIN:-auth.alsa.web.id}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - vol_caddy_data:/data
+      - vol_caddy_config:/config
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    networks:
+      net_edge:
+        ipv4_address: 172.30.0.3
+      net_portal:
+        ipv4_address: 172.30.1.2
+      net_auth:
+        ipv4_address: 172.30.2.2
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/healthz-proxy"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    logging: *default_logging
+
+  # ----------------------------------------------------------------------------
+  # 3. portaX Go BFF Portal Application
+  # ----------------------------------------------------------------------------
+  portal:
+    build:
+      context: ../app
+      dockerfile: Dockerfile
+      target: portal
+    image: portax/portal:local
+    container_name: portax-portal
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: 0.50
+    pids_limit: 100
+    environment:
+      LISTEN_ADDR: "0.0.0.0:8000"
+      TRUSTED_PROXY_IP: "172.30.1.2"
+      PORTAL_DOMAIN: ${PORTAL_DOMAIN:-panel.alsa.web.id}
+      AUTH_DOMAIN: ${AUTH_DOMAIN:-auth.alsa.web.id}
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN}
+      CF_ACCESS_AUD_TAG: ${CF_ACCESS_AUD_TAG}
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-https://auth.alsa.web.id/application/o/portax/}
+      OIDC_INTERNAL_BASE_URL: ${OIDC_INTERNAL_BASE_URL:-http://172.30.1.2:8081/application/o/portax}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-portax-confidential-client}
+      OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-https://panel.alsa.web.id/auth/callback}
+      OIDC_CLIENT_SECRET_FILE: /run/secrets/portal_oidc_client_secret
+      SESSION_PEPPER_FILE: /run/secrets/portal_session_pepper
+      COOKIE_AEAD_KEY_FILE: /run/secrets/portal_cookie_aead_key
+      DB_HOST: "172.30.3.4"
+      DB_PORT: "5432"
+      DB_NAME: "portax"
+      DB_USER: "portal_app"
+      DB_PASSWORD_FILE: /run/secrets/portal_db_app_password
+      DB_MIGRATOR_USER: "portal_migrator"
+      DB_MIGRATOR_PASSWORD_FILE: /run/secrets/portal_db_migrator_password
+      SESSION_USER_IDLE_TIMEOUT: ${SESSION_USER_IDLE_TIMEOUT:-30m}
+      SESSION_USER_ABSOLUTE_TIMEOUT: ${SESSION_USER_ABSOLUTE_TIMEOUT:-12h}
+      SESSION_ADMIN_IDLE_TIMEOUT: ${SESSION_ADMIN_IDLE_TIMEOUT:-10m}
+      SESSION_ADMIN_ABSOLUTE_TIMEOUT: ${SESSION_ADMIN_ABSOLUTE_TIMEOUT:-1h}
+      ALLOWED_LAUNCH_HOST_SUFFIXES: ${ALLOWED_LAUNCH_HOST_SUFFIXES:-alsa.web.id,ts.net}
+      OPS_STATUS_FILE: /var/run/portax-ops/status.json
+    volumes:
+      - ./prober/targets.yaml:/etc/portax/targets.yaml:ro
+      - vol_ops_status:/var/run/portax-ops:ro
+    secrets:
+      - portal_oidc_client_secret
+      - portal_session_pepper
+      - portal_cookie_aead_key
+      - portal_db_app_password
+      - portal_db_migrator_password
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    networks:
+      net_portal:
+        ipv4_address: 172.30.1.3
+      net_portal_db:
+        ipv4_address: 172.30.3.2
+      net_portal_egress:
+        ipv4_address: 172.30.5.2
+    depends_on:
+      portal-db:
+        condition: service_healthy
+    logging: *default_logging
+
+  # ----------------------------------------------------------------------------
+  # 4. portaX Isolated SSRF-Safe Health Prober
+  # ----------------------------------------------------------------------------
+  prober:
+    build:
+      context: ../app
+      dockerfile: Dockerfile
+      target: prober
+    image: portax/prober:local
+    container_name: portax-prober
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 64
+    environment:
+      TARGETS_FILE: /etc/portax/targets.yaml
+      PROBE_INTERVAL: ${PROBE_INTERVAL:-30s}
+      DB_HOST: "172.30.3.4"
+      DB_PORT: "5432"
+      DB_NAME: "portax"
+      DB_USER: "portal_prober"
+      DB_PASSWORD_FILE: /run/secrets/portal_db_prober_password
+    volumes:
+      - ./prober/targets.yaml:/etc/portax/targets.yaml:ro
+    secrets:
+      - portal_db_prober_password
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m
+    networks:
+      net_portal_db:
+        ipv4_address: 172.30.3.3
+      net_probe_egress:
+        ipv4_address: 172.30.6.2
+    depends_on:
+      portal-db:
+        condition: service_healthy
+      portal:
+        condition: service_started
+    logging: *default_logging
+
+  # ----------------------------------------------------------------------------
+  # 5. Portal PostgreSQL Database (>= 17.11 to mitigate CVE-2026-6471/14677)
+  # ----------------------------------------------------------------------------
+  portal-db:
+    image: postgres:17.11-alpine
+    container_name: portax-portal-db
+    restart: unless-stopped
+    user: "70:70"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 128
+    environment:
+      POSTGRES_DB: portax
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/portal_db_migrator_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256 --data-checksums"
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+    volumes:
+      - vol_portal_db:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/portal-init.sh:/docker-entrypoint-initdb.d/01-portal-init.sh:ro
+    secrets:
+      - portal_db_migrator_password
+      - portal_db_app_password
+      - portal_db_prober_password
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=8m
+    networks:
+      net_portal_db:
+        ipv4_address: 172.30.3.4
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d portax"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging: *default_logging
+
+  # ----------------------------------------------------------------------------
+  # 6. Authentik Server (>= 2025.12.4 to mitigate CVE-2026-25227 / 25748)
+  # ----------------------------------------------------------------------------
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2025.12.4
+    container_name: portax-authentik-server
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    cpus: 1.00
+    pids_limit: 200
+    command: server
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: "172.30.4.4"
+      AUTHENTIK_POSTGRESQL__USER: "authentik"
+      AUTHENTIK_POSTGRESQL__NAME: "authentik"
+      AUTHENTIK_POSTGRESQL__PASSWORD: "file:///run/secrets/authentik_db_password"
+      AUTHENTIK_SECRET_KEY: "file:///run/secrets/authentik_secret_key"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      AUTHENTIK_AVATARS: "none"
+      AUTHENTIK_IMPERSONATION: "false"
+      # Trust ONLY Caddy's single /32 IP on net_auth
+      AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: "172.30.2.2/32"
+    volumes:
+      - vol_authentik_media:/media
+      - ./authentik/blueprints:/blueprints/custom:ro
+    secrets:
+      - authentik_db_password
+      - authentik_secret_key
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /dev/shm:rw,noexec,nosuid,nodev,size=64m
+    networks:
+      net_auth:
+        ipv4_address: 172.30.2.3
+      net_auth_db:
+        ipv4_address: 172.30.4.2
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    logging: *default_logging
+
+  # ----------------------------------------------------------------------------
+  # 7. Authentik Worker (PostgreSQL-backed tasks/cache in 2025.10+; no Redis)
+  # ----------------------------------------------------------------------------
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2025.12.4
+    container_name: portax-authentik-worker
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    cpus: 1.00
+    pids_limit: 200
+    command: worker
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: "172.30.4.4"
+      AUTHENTIK_POSTGRESQL__USER: "authentik"
+      AUTHENTIK_POSTGRESQL__NAME: "authentik"
+      AUTHENTIK_POSTGRESQL__PASSWORD: "file:///run/secrets/authentik_db_password"
+      AUTHENTIK_SECRET_KEY: "file:///run/secrets/authentik_secret_key"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      AUTHENTIK_AVATARS: "none"
+      AUTHENTIK_IMPERSONATION: "false"
+    volumes:
+      - vol_authentik_media:/media
+      - ./authentik/blueprints:/blueprints/custom:ro
+    secrets:
+      - authentik_db_password
+      - authentik_secret_key
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /dev/shm:rw,noexec,nosuid,nodev,size=64m
+    networks:
+      net_auth_db:
+        ipv4_address: 172.30.4.3
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    logging: *default_logging
+
+  # ----------------------------------------------------------------------------
+  # 8. Authentik PostgreSQL Database (max_connections=200 for post-Redis load)
+  # ----------------------------------------------------------------------------
+  authentik-db:
+    image: postgres:17.11-alpine
+    container_name: portax-authentik-db
+    restart: unless-stopped
+    user: "70:70"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 1.00
+    pids_limit: 256
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD_FILE: /run/secrets/authentik_db_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256 --data-checksums"
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+    volumes:
+      - vol_authentik_db:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    secrets:
+      - authentik_db_password
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=16m
+    networks:
+      net_auth_db:
+        ipv4_address: 172.30.4.4
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging: *default_logging
+
+# ==============================================================================
+# Isolated Docker Bridge Networks (Fixed /29 Subnets)
+# ==============================================================================
+networks:
+  net_edge:
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: 172.30.0.0/29
+  net_portal:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.1.0/29
+  net_auth:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.2.0/29
+  net_portal_db:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.3.0/29
+  net_auth_db:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.4.0/29
+  net_portal_egress:
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: 172.30.5.0/29
+  net_probe_egress:
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: 172.30.6.0/29
+
+volumes:
+  vol_portal_db:
+  vol_authentik_db:
+  vol_authentik_media:
+  vol_caddy_data:
+  vol_caddy_config:
+  vol_ops_status:
+
+secrets:
+  portal_db_migrator_password:
+    file: /etc/portax/secrets/portal_db_migrator_password
+  portal_db_app_password:
+    file: /etc/portax/secrets/portal_db_app_password
+  portal_db_prober_password:
+    file: /etc/portax/secrets/portal_db_prober_password
+  portal_session_pepper:
+    file: /etc/portax/secrets/portal_session_pepper
+  portal_cookie_aead_key:
+    file: /etc/portax/secrets/portal_cookie_aead_key
+  portal_oidc_client_secret:
+    file: /etc/portax/secrets/portal_oidc_client_secret
+  authentik_db_password:
+    file: /etc/portax/secrets/authentik_db_password
+  authentik_secret_key:
+    file: /etc/portax/secrets/authentik_secret_key
+  cloudflared_credentials:
+    file: /etc/portax/secrets/cloudflared_credentials.json

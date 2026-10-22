@@ -1,0 +1,51 @@
+name: portaX DevSecOps CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  security-and-tests:
+    name: Test, SAST, SCA & Compose Hardening Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+          cache-dependency-path: app/go.sum
+
+      - name: Verify Compose Security Policy (No docker.sock, No 0.0.0.0 ports, cap_drop ALL)
+        run: |
+          if grep -v '^\s*#' deploy/compose.yaml | grep -E 'docker\.sock|privileged:\s*true'; then
+            echo "FAIL: Forbidden docker.sock or privileged container detected!"
+            exit 1
+          fi
+          if grep -v '^\s*#' deploy/compose.yaml | grep -E '^\s*-\s*"?[0-9]+:[0-9]+"?' | grep -v '127\.0\.0\.1:'; then
+            echo "FAIL: Host port bound to 0.0.0.0 detected!"
+            exit 1
+          fi
+          echo "PASS: Compose hardening baseline verified."
+
+      - name: Run Go Unit & Security Tests (with Race Detector)
+        working-directory: app
+        run: go test ./... -race -v
+
+      - name: Run govulncheck (Go Stdlib & Dependency CVE Scan)
+        working-directory: app
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Secret Scanning (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

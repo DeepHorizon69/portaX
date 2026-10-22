@@ -1,0 +1,31 @@
+# ==============================================================================
+# portaX Health-Check Prober Allowlist (Git-Managed, Read-Only Mount)
+# ==============================================================================
+# SSRF Control: The web UI CANNOT edit this file or specify arbitrary URLs.
+# Catalog items in the DB can only reference a 'id' defined below.
+# The prober resolves DNS, checks every IP against 'allowed_cidrs' AND denies
+# loopback/link-local/Docker bridge subnets inside net.Dialer.Control right
+# before connect() (zero TOCTOU DNS rebinding window).
+# ==============================================================================
+targets:
+  - id: pihole-dns-web
+    method: https_get
+    host: pihole.alsa.web.id
+    port: 443
+    path: /admin/login
+    expected_status: 200
+    allowed_cidrs:
+      - "192.168.1.0/24"
+      - "100.64.0.0/10"
+    tls_verify: true
+
+  - id: proxmox-ve-node1
+    method: https_get
+    host: pve.alsa.web.id
+    port: 8006
+    path: /
+    expected_status: 200
+    allowed_cidrs:
+      - "192.168.1.0/24"
+      - "100.64.0.0/10"
+    tls_verify: true

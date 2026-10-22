@@ -1,0 +1,31 @@
+# ==============================================================================
+# portaX Authentik Declarative Blueprint (Groups, RBAC Separation & OIDC Setup)
+# ==============================================================================
+# Security controls enforced by this blueprint:
+# 1. Creates isolated groups: 'portal-users' (viewer) and 'portal-admins' (admin).
+# 2. Grants ZERO Authentik delegated permissions (no propertymapping/policy view
+#    permissions -> mitigates CVE-2026-25227).
+# 3. Uses local credentials + mandatory MFA (TOTP/WebAuthn); zero external
+#    Source stages (mitigates CVE-2026-49448) and zero SCIM/SAML/LDAP providers
+#    (mitigates CVE-2026-72537 / CVE-2026-57580).
+# ==============================================================================
+version: 1
+metadata:
+  name: portax-security-baseline
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
+
+entries:
+  - model: authentik_core.group
+    id: group_portal_users
+    identifiers:
+      name: portal-users
+    attrs:
+      is_superuser: false
+
+  - model: authentik_core.group
+    id: group_portal_admins
+    identifiers:
+      name: portal-admins
+    attrs:
+      is_superuser: false

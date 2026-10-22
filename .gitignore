@@ -1,0 +1,26 @@
+# Secrets and local environment files - NEVER COMMIT
+.env
+*.env
+!*.env.example
+!.env.example
+secrets/
+*.pem
+*.key
+*.crt
+*credentials*.json
+status.json
+
+# Go build artifacts
+/app/bin/
+/app/portal
+/app/prober
+*.exe
+*.test
+*.out
+coverage.txt
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

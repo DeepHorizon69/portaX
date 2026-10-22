@@ -1,0 +1,185 @@
+# ==============================================================================
+# portaX Caddy Configuration — 3 Physically Separated Trust-Boundary Listeners
+# ==============================================================================
+# Zero third-party plugins (mitigates CVE-2026-46415).
+#
+# Listener 1 (:8080 on net_edge):
+#   - Reachable ONLY by cloudflared (172.30.0.2/32).
+#   - Trusts Cf-Connecting-IP ONLY from 172.30.0.2/32.
+#   - Enforces positive path allowlist on auth.alsa.web.id (blocks /api/v3/*
+#     admin APIs, /if/admin/*, /schema/* -> mitigates CVE-2026-25227 / 72537).
+#
+# Listener 2 (:8081 on net_portal):
+#   - Reachable ONLY by portal (172.30.1.3) for OIDC back-channel token/JWKS.
+#   - Zero trusted_proxies (portal cannot spoof client IPs).
+#   - Routes ONLY /application/o/* and /.well-known/* to authentik-server.
+#
+# Listener 3 (:9443 bound to host 127.0.0.1 for Tailscale Serve):
+#   - Zero trusted_proxies.
+#   - Exposes full Authentik admin UI exclusively to the tailnet.
+# ==============================================================================
+{
+	admin off
+	auto_https off
+	 persist_config off
+
+	servers :8080 {
+		trusted_proxies static 172.30.0.2/32
+		client_ip_headers Cf-Connecting-Ip
+		max_header_size 16KB
+		timeouts {
+			read_body   10s
+			read_header 5s
+			write       30s
+			idle        60s
+		}
+	}
+
+	servers :8081 {
+		max_header_size 16KB
+		timeouts {
+			read_body   5s
+			read_header 5s
+			write       10s
+			idle        30s
+		}
+	}
+
+	servers :9443 {
+		max_header_size 16KB
+		timeouts {
+			read_body   30s
+			read_header 10s
+			write       60s
+			idle        120s
+		}
+	}
+}
+
+# Reusable security headers snippet
+(security_headers) {
+	header {
+		-Server
+		-X-Powered-By
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		# Staged HSTS rollout: start at 300s in M7/M10, then increase after verification
+		Strict-Transport-Security "max-age=300"
+	}
+}
+
+# ==============================================================================
+# LISTENER 1A: Public Portal Hostname (via Cloudflare Tunnel on :8080)
+# ==============================================================================
+http://{$PORTAL_DOMAIN:panel.alsa.web.id}:8080 {
+	import security_headers
+	header {
+		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self' https://{$AUTH_DOMAIN:auth.alsa.web.id}; frame-ancestors 'none'; base-uri 'none'"
+	}
+
+	request_body {
+		max_size 1MB
+	}
+
+	reverse_proxy 172.30.1.3:8000 {
+		header_up Host {host}
+		header_up X-Real-IP {client_ip}
+		header_up X-Forwarded-For {client_ip}
+		header_up X-Forwarded-Proto "https"
+		header_up Cf-Access-Jwt-Assertion {http.request.header.Cf-Access-Jwt-Assertion}
+		header_up Cf-Access-Client-Id {http.request.header.Cf-Access-Client-Id}
+	}
+}
+
+# ==============================================================================
+# LISTENER 1B: Public Authentik Hostname (Positive Path Allowlist ONLY on :8080)
+# ==============================================================================
+http://{$AUTH_DOMAIN:auth.alsa.web.id}:8080 {
+	import security_headers
+
+	request_body {
+		max_size 64KB
+	}
+
+	# Strict positive allowlist for OIDC & user authentication flows ONLY.
+	# Blocks /if/admin/*, /api/v3/propertymappings/*, /api/v3/policies/*,
+	# /api/v3/core/*, /api/v3/sources/*, /api/v3/rbac/*, /schema/* etc.
+	@allowed_public_auth {
+		path /if/flow/*
+		path /api/v3/flows/executor/*
+		path /api/v3/root/config/
+		path /application/o/*
+		path /.well-known/openid-configuration
+		path /.well-known/webfinger
+		path /static/*
+	}
+
+	handle @allowed_public_auth {
+		reverse_proxy 172.30.2.3:9000 {
+			header_up Host {host}
+			header_up X-Real-IP {client_ip}
+			header_up X-Forwarded-For {client_ip}
+			header_up X-Forwarded-Proto "https"
+			# Strip any incoming X-Authentik-* headers (CVE-2026-25748 defense-in-depth)
+			header_up -X-Authentik-Username
+			header_up -X-Authentik-Groups
+			header_up -X-Authentik-Email
+			header_up -X-Authentik-Name
+			header_up -X-Authentik-Uid
+		}
+	}
+
+	handle {
+		respond "Not Found" 404
+	}
+}
+
+# Catch-all on :8080 for unknown Host headers
+http://:8080 {
+	respond "Not Found" 404
+}
+
+# ==============================================================================
+# LISTENER 2: Internal OIDC Back-Channel (:8081 on net_portal -> authentik)
+# ==============================================================================
+http://:8081 {
+	handle /healthz-proxy {
+		respond "ok" 200
+	}
+
+	@oidc_backchannel {
+		path /application/o/*
+		path /.well-known/*
+	}
+
+	handle @oidc_backchannel {
+		reverse_proxy 172.30.2.3:9000 {
+			header_up Host {$AUTH_DOMAIN:auth.alsa.web.id}
+			header_up X-Forwarded-Proto "https"
+			header_up -X-Forwarded-For
+			header_up -X-Real-IP
+		}
+	}
+
+	handle {
+		respond "Forbidden" 403
+	}
+}
+
+# ==============================================================================
+# LISTENER 3: Tailscale-Only Authentik Admin UI (bound to 127.0.0.1:9443)
+# ==============================================================================
+http://:9443 {
+	import security_headers
+
+	reverse_proxy 172.30.2.3:9000 {
+		header_up Host {host}
+		header_up X-Forwarded-Proto "https"
+		header_up -X-Forwarded-For
+		header_up -X-Real-IP
+	}
+}
