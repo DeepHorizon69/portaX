@@ -107,15 +107,15 @@ func ValidateLaunchURL(raw string, allowedHostSuffixes []string) error {
 	if err != nil {
 		return errors.New("malformed launch_url")
 	}
-	if u.Scheme != "https" {
-		return errors.New("launch_url must use https scheme")
-	}
-	if u.User != nil {
-		return errors.New("launch_url must not contain userinfo credentials")
-	}
 	host := strings.ToLower(u.Hostname())
 	if host == "" {
 		return errors.New("launch_url must include a valid hostname")
+	}
+	if u.Scheme != "https" && !(u.Scheme == "http" && strings.HasSuffix(host, ".ts.net")) {
+		return errors.New("launch_url must use https scheme (or http over WireGuard .ts.net)")
+	}
+	if u.User != nil {
+		return errors.New("launch_url must not contain userinfo credentials")
 	}
 	if net.ParseIP(host) != nil || strings.HasPrefix(host, "[") {
 		return errors.New("launch_url must not expose raw IP addresses; use Access or MagicDNS hostnames")

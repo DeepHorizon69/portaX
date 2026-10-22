@@ -9,23 +9,34 @@
 # ==============================================================================
 targets:
   - id: pihole-dns-web
-    method: https_get
-    host: pihole.alsa.web.id
-    port: 443
+    method: http_get
+    host: 192.168.1.77
+    port: 8081
     path: /admin/login
     expected_status: 200
     allowed_cidrs:
       - "192.168.1.0/24"
       - "100.64.0.0/10"
-    tls_verify: true
+    tls_verify: false
 
   - id: proxmox-ve-node1
     method: https_get
-    host: pve.alsa.web.id
+    host: 192.168.1.75
     port: 8006
     path: /
     expected_status: 200
     allowed_cidrs:
       - "192.168.1.0/24"
       - "100.64.0.0/10"
-    tls_verify: true
+    tls_verify: false
+
+  - id: dockge-admin-web
+    method: http_get
+    host: 192.168.1.77
+    port: 5001
+    path: /
+    expected_status: 200
+    allowed_cidrs:
+      - "192.168.1.0/24"
+      - "100.64.0.0/10"
+    tls_verify: false
