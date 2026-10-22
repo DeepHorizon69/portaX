@@ -40,3 +40,14 @@ targets:
       - "192.168.1.0/24"
       - "100.64.0.0/10"
     tls_verify: false
+
+  - id: navidrome-music-web
+    method: http_get
+    host: 192.168.1.77
+    port: 4533
+    path: /app/
+    expected_status: 200
+    allowed_cidrs:
+      - "192.168.1.0/24"
+      - "100.64.0.0/10"
+    tls_verify: false
